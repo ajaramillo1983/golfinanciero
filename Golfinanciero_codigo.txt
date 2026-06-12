@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gol financiero - Ecuador</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=DM+Sans:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+  <style>
+        :root {
+            --snes-sky: #5c94fc;      /* Cielo clásico SNES */
+            --snes-grass-a: #3aa830;  /* Franja de césped clara */
+            --snes-grass-b: #2e8a26;  /* Franja de césped oscura */
+            --snes-yellow: #fcbc3c;   /* Bloque ? */
+            --snes-brick: #c84c0c;    /* Ladrillo */
+            --snes-dark: #0c1424;     /* Sombra/contorno pixel */
+        }
+        body {
+            font-family: 'DM Sans', sans-serif;
+            margin: 0;
+            overflow: hidden;
+            background-color: var(--snes-sky);
+            user-select: none;
+            image-rendering: pixelated;
+        }
+        .pixel-font { font-family: 'Press Start 2P', monospace; }
+
+        /* ===== ENTORNO SNES: cielo, nubes, colinas y césped ===== */
+        .field {
+            background:
+                /* Franjas duras de césped tipo 16 bits */
+                repeating-linear-gradient(
+                    90deg,
+                    var(--snes-grass-a) 0px, var(--snes-grass-a) 64px,
+                    var(--snes-grass-b) 64px, var(--snes-grass-b) 128px
+                );
+            position: relative;
+            width: 100%;
+            height: 100vh;
+            overflow: hidden;
+        }
+        /* Banda de cielo superior con borde dentado pixel */
+        .sky-band {
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 96px;
+            background: var(--snes-sky);
+            z-index: 1;
+            pointer-events: none;
+        }
+        .sky-band::after {
+            content: '';
+            position: absolute;
+            bottom: -12px; left: 0; right: 0;
+            height: 12px;
+            background:
+                repeating-linear-gradient(
+                    90deg,
+                    var(--snes-sky) 0 12px,
+                    transparent 12px 24px
+                );
+        }
+        /* Sol pixelado */
+        .pixel-sun {
+            position: absolute;
+            top: 18px; right: 70px;
+            width: 48px; height: 48px;
+            background: #fce83c;
+            box-shadow:
+                0 0 0 6px #fcbc3c,
+                -12px 0 0 0 #fce83c, 12px 0 0 0 #fce83c,
+                0 -12px 0 0 #fce83c, 0 12px 0 0 #fce83c;
+            z-index: 2;
+            pointer-events: none;
+        }
+        /* Nubes pixeladas (rectángulos apilados, sin curvas) */
+        .pixel-cloud {
+            position: absolute;
+            width: 84px; height: 24px;
+            background: #ffffff;
+            box-shadow:
+                12px -12px 0 0 #ffffff,
+                36px -12px 0 0 #ffffff,
+                24px -20px 0 0 #ffffff,
+                0 4px 0 0 rgba(0,0,0,0.08);
+            z-index: 2;
+            pointer-events: none;
+            animation: cloud-drift 40s linear infinite;
+        }
+        @keyframes cloud-drift {
+            0%   { transform: translateX(0); }
+            50%  { transform: translateX(60px); }
+            100% { transform: translateX(0); }
+        }
+        /* Colinas verdes pixeladas al fondo */
+        .pixel-hill {
+            position: absolute;
+            bottom: 0;
+            width: 160px; height: 56px;
+            background: #1d7a1d;
+            box-shadow:
+                24px -16px 0 0 #1d7a1d,
+                72px -16px 0 0 #1d7a1d,
+                48px -28px 0 0 #1d7a1d;
+            z-index: 1;
+            opacity: 0.85;
+            pointer-events: none;
+        }
+        /* Arbustos pixelados */
+        .pixel-bush {
+            position: absolute;
+            bottom: 8px;
+            width: 64px; height: 20px;
+            background: #4cc43c;
+            box-shadow:
+                12px -10px 0 0 #4cc43c,
+                32px -10px 0 0 #4cc43c;
+            z-index: 1;
+            pointer-events: none;
+        }
+        /* Capa de scanlines CRT sutil */
+        .crt-overlay {
+            position: fixed;
+            inset: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0,0,0,0.07) 0px, rgba(0,0,0,0.07) 2px,
+                transparent 2px, transparent 4px
+            );
+            z-index: 90;
+            pointer-events: none;
+        }
+
+        /* Líneas de cancha pixeladas: blancas, sólidas, sin suavizado */
+        .field-line {
+            position: absolute;
+            border: 4px solid #ffffff;
+        }
+        .center-circle {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%,-50%);
+            width: 120px; height: 120px;
+            border-radius: 50%;
+            border: 4px solid #ffffff;
+            box-shadow: 0 4px 0 0 rgba(0,0,0,0.15);
+            z-index: 3;
+        }
+        .center-line {
+            position: absolute;
+            top: 0; bottom: 0; left: 50%;
+            border-left: 4px solid #ffffff;
+            z-index: 3;
+        }
+        .goal-area {
+            position: absolute;
+            top: 50%; left: 0;
+            transform: translateY(-50%);
+            width: 60px; height: 160px;
+            border: 4px solid #ffffff;
+            border-left: none;
+            z-index: 3;
+        }
+        .goal-area-right {
+            left: auto; right: 0;
+            border-left: 4px solid #ffffff;
+            border-right: none;
+        }
+
+        /* Running animations */
+        @keyframes swing-left-leg {
+            0%, 100% { transform: rotate(-20deg); }
+            50% { transform: rotate(25deg); }
+        }
+        @keyframes swing-right-leg {
+            0%, 100% { transform: rotate(25deg); }
+            50% { transform: rotate(-20deg); }
+        }
+        @keyframes body-tilt {
+            0%, 100% { transform: rotate(3deg) translateY(-2px); }
+            50% { transform: rotate(7deg) translateY(2px); }
+        }
+        @keyframes ball-roll {
+            0% { transform: translate(0, 0) rotate(0deg); }
+            100% { transform: translate(0, 0) rotate(360deg); }
+        }
+
+        .player {
+            position: absolute;
+            width: 58px;
+            height: 72px;
+            transition: left 0.8s cubic-bezier(0.25, 1, 0.5, 1), top 0.8s cubic-bezier(0.25, 1, 0.5, 1);
+            z-index: 10;
+        }
+
+        .player.is-running .left-leg {
+            animation: swing-left-leg 0.25s infinite ease-in-out;
+        }
+        .player.is-running .right-leg {
+            animation: swing-right-leg 0.25s infinite ease-in-out;
+        }
+        .player.is-running .player-upper-body {
+            animation: body-tilt 0.25s infinite ease-in-out;
+        }
+        .player.is-running .soccer-ball {
+            animation: ball-roll 0.25s infinite linear;
+        }
+
+        .player-body {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            filter: drop-shadow(0 6px 0 rgba(0,0,0,0.35));
+        }
+
+        /* ===== Bloques "?" estilo Mario en lugar de puntos ===== */
+        @keyframes block-bounce {
+            0%, 100% { transform: translate(-50%,-50%); }
+            50% { transform: translate(-50%, calc(-50% - 4px)); }
+        }
+        .position-dot {
+            position: absolute;
+            width: 28px; height: 28px;
+            background: var(--snes-yellow);
+            border: 3px solid var(--snes-dark);
+            box-shadow:
+                inset 3px 3px 0 0 #fde87c,
+                inset -3px -3px 0 0 #c87c14,
+                0 4px 0 0 rgba(0,0,0,0.3);
+            transform: translate(-50%,-50%);
+            transition: background 0.3s, box-shadow 0.3s;
+            cursor: pointer;
+            z-index: 4;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 12px;
+            color: var(--snes-dark);
+            text-shadow: 1px 1px 0 #fde87c;
+        }
+        .position-dot:hover {
+            animation: block-bounce 0.4s ease-in-out infinite;
+            box-shadow:
+                inset 3px 3px 0 0 #fff5b0,
+                inset -3px -3px 0 0 #c87c14,
+                0 0 0 3px #fce83c,
+                0 4px 0 0 rgba(0,0,0,0.3);
+        }
+        .position-dot.cleared {
+            background: #b06820; /* Bloque golpeado */
+            color: #fce83c;
+            box-shadow:
+                inset 3px 3px 0 0 #d89048,
+                inset -3px -3px 0 0 #7c4410,
+                0 4px 0 0 rgba(0,0,0,0.3);
+        }
+        .position-dot.cleared::after {
+            content: '●';
+            position: absolute;
+            top: -18px;
+            font-size: 12px;
+            color: #fce83c;
+            text-shadow: 1px 1px 0 var(--snes-dark);
+        }
+
+        /* ===== Modal estilo cuadro de diálogo SNES ===== */
+        .modal-overlay {
+            position: fixed; inset: 0;
+            background: rgba(12, 20, 36, 0.8);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 100;
+        }
+        .modal-card {
+            background: #fff8e8;
+            border-radius: 0;
+            padding: 24px;
+            max-width: 440px;
+            width: 90%;
+            border: 4px solid var(--snes-dark);
+            box-shadow:
+                inset 0 0 0 4px #ffffff,
+                inset 0 0 0 8px var(--snes-yellow),
+                8px 8px 0 0 rgba(0,0,0,0.5);
+        }
+        .option-btn {
+            width: 100%;
+            padding: 14px 18px;
+            border-radius: 0;
+            border: 3px solid var(--snes-dark);
+            background: #ffffff;
+            box-shadow: 4px 4px 0 0 var(--snes-dark);
+            cursor: pointer;
+            text-align: left;
+            transition: transform 0.1s, box-shadow 0.1s, background 0.2s;
+            font-size: 14px;
+            font-weight: 500;
+            color: #1e293b;
+        }
+        .option-btn:hover {
+            background: #fff5d6;
+            transform: translate(2px, 2px);
+            box-shadow: 2px 2px 0 0 var(--snes-dark);
+        }
+        .option-btn:active {
+            transform: translate(4px, 4px);
+            box-shadow: 0 0 0 0 var(--snes-dark);
+        }
+        .option-btn.correct { border-color: #1b5e20; background: #c8f5b0; color: #1b5e20; box-shadow: 4px 4px 0 0 #1b5e20; }
+        .option-btn.wrong { border-color: #b71c1c; background: #ffd0d0; color: #b71c1c; box-shadow: 4px 4px 0 0 #b71c1c; }
+
+        /* Botón pixel reutilizable (inicio, reinicio, victoria) */
+        .pixel-btn {
+            font-family: 'Press Start 2P', monospace;
+            border-radius: 0 !important;
+            border: 4px solid var(--snes-dark);
+            box-shadow:
+                inset 0 -6px 0 0 rgba(0,0,0,0.2),
+                6px 6px 0 0 rgba(0,0,0,0.45);
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+        .pixel-btn:hover {
+            transform: translate(2px, 2px);
+            box-shadow:
+                inset 0 -6px 0 0 rgba(0,0,0,0.2),
+                4px 4px 0 0 rgba(0,0,0,0.45);
+        }
+        .pixel-btn:active {
+            transform: translate(6px, 6px);
+            box-shadow: inset 0 -6px 0 0 rgba(0,0,0,0.2);
+        }
+
+        /* ===== Barra de progreso: monedas pixel ===== */
+        .progress-bar {
+            position: absolute; top: 16px; left: 50%;
+            transform: translateX(-50%);
+            display: flex; gap: 8px; z-index: 20;
+            background: var(--snes-dark);
+            padding: 8px 14px;
+            border-radius: 0;
+            border: 3px solid #ffffff;
+            box-shadow: 4px 4px 0 0 rgba(0,0,0,0.4);
+        }
+        .progress-pip {
+            width: 18px; height: 18px;
+            border-radius: 0;
+            background: #2a3a5c;
+            border: 2px solid #4a5a7c;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 7px;
+            color: #7a8aac;
+            transition: all 0.3s;
+        }
+        .progress-pip.done {
+            background: var(--snes-yellow);
+            border-color: #fde87c;
+            color: var(--snes-dark);
+            box-shadow: inset -2px -2px 0 0 #c87c14;
+        }
+        .screen-overlay {
+            position: fixed; inset: 0;
+            display: flex; align-items: center; justify-content: center;
+            z-index: 200;
+            background:
+                repeating-linear-gradient(
+                    0deg,
+                    rgba(0,0,0,0.08) 0px, rgba(0,0,0,0.08) 2px,
+                    transparent 2px, transparent 4px
+                ),
+                linear-gradient(180deg, #0c1424 0%, #1a2a4c 100%);
+            overflow-y: auto;
+            padding: 20px;
+        }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.0/dist/umd/lucide.min.js" type="text/javascript"></script>
+</head>
+<body>
+
+  <!-- Start Screen & Instructions -->
+  <div id="start-screen" class="screen-overlay">
+   <div class="text-center text-white max-w-xl w-full px-4 my-auto">
+    <div class="text-7xl mb-4 animate-bounce">
+      ⚽
+    </div>
+    <h1 data-template-id="game-title" class="pixel-font text-2xl md:text-3xl mb-4 text-yellow-300" style="text-shadow: 3px 3px 0 #c84c0c, 6px 6px 0 #0c1424;">Gol financiero</h1>
+    <p data-template-id="game-subtitle" class="text-base md:text-lg opacity-90 mb-6">¡Qué la pasión del Mundial no golee el bolsillo de tu selección familiar!</p>
+
+    <!-- Instructions Board -->
+    <div class="bg-white/10 rounded-none p-5 text-left mb-8 space-y-4" style="border: 4px solid #fcbc3c; box-shadow: inset 0 0 0 3px #0c1424, 6px 6px 0 0 rgba(0,0,0,0.5);">
+      <h3 class="pixel-font text-xs md:text-sm text-yellow-300 border-b-4 border-yellow-400/40 pb-3 flex items-center gap-2">
+        <i data-lucide="info" class="w-5 h-5 text-yellow-300"></i> ¿Cómo se juega el partido financiero?
+      </h3>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-slate-100">
+        <div class="flex gap-3">
+          <div class="pixel-font bg-yellow-400 text-gray-900 w-6 h-6 flex items-center justify-center shrink-0 text-xs" style="border: 2px solid #0c1424; box-shadow: 2px 2px 0 0 #0c1424;">1</div>
+          <p><strong>Haz clic en la cancha</strong> para retar a la siguiente posición táctica en el campo de juego.</p>
+        </div>
+        <div class="flex gap-3">
+          <div class="pixel-font bg-yellow-400 text-gray-900 w-6 h-6 flex items-center justify-center shrink-0 text-xs" style="border: 2px solid #0c1424; box-shadow: 2px 2px 0 0 #0c1424;">2</div>
+          <p><strong>Decide bien:</strong> responde las preguntas basadas en el decálogo del buen hincha.</p>
+        </div>
+        <div class="flex gap-3">
+          <div class="pixel-font bg-yellow-400 text-gray-900 w-6 h-6 flex items-center justify-center shrink-0 text-xs" style="border: 2px solid #0c1424; box-shadow: 2px 2px 0 0 #0c1424;">3</div>
+          <p><strong>Avanza o retrocede:</strong> si aciertas, corres adelante. Si fallas, ¡retrocedes una posición!</p>
+        </div>
+        <div class="flex gap-3">
+          <div class="pixel-font bg-yellow-400 text-gray-900 w-6 h-6 flex items-center justify-center shrink-0 text-xs" style="border: 2px solid #0c1424; box-shadow: 2px 2px 0 0 #0c1424;">4</div>
+          <p><strong>¡Mete el GOL!:</strong> cruza las 10 posiciones de la Tri para consagrarte Campeón del Bolsillo.</p>
+        </div>
+      </div>
+    </div>
+
+    <button data-template-id="start-btn" class="pixel-btn px-8 py-4 bg-yellow-400 text-green-950 text-sm md:text-base hover:bg-yellow-300" onclick="startGame()">
+      ¡Saltar a la cancha!
+    </button>
+   </div>
+  </div>
+
+  <!-- Victory Screen -->
+  <div id="victory-screen" class="screen-overlay hidden">
+   <div class="text-center text-white px-6">
+    <div class="text-8xl mb-4 animate-bounce">
+      🏆
+    </div>
+    <h2 data-template-id="victory-title" class="pixel-font text-xl md:text-2xl mb-5 text-yellow-300" style="text-shadow: 3px 3px 0 #c84c0c, 6px 6px 0 #0c1424;">¡GOOOL DE LA TRI! 🎉</h2>
+    <p data-template-id="victory-text" class="text-lg opacity-90 mb-8 max-w-md mx-auto">Tomaste las mejores decisiones financieras y anotaste el gol de tu vida. Para más información sobre educación financiera visita: www.fundacionbienestar.org.ec </p>
+    <button data-template-id="replay-btn" class="pixel-btn px-8 py-4 bg-yellow-400 text-green-950 text-sm hover:bg-yellow-300" onclick="startGame()">
+      Jugar de nuevo
+    </button>
+   </div>
+  </div>
+
+  <!-- Permanent Restart & Header Bar -->
+  <div class="absolute top-4 left-4 right-4 flex justify-between items-center z-30 pointer-events-none">
+    <!-- Top Left Brand Indicator -->
+    <div class="px-4 py-2 flex items-center gap-2 pointer-events-auto" style="background: #0c1424; border: 3px solid #ffffff; box-shadow: 4px 4px 0 0 rgba(0,0,0,0.4);">
+      <span class="text-lg">🇪🇨</span>
+      <span class="pixel-font text-white text-[9px] md:text-[10px] tracking-wider uppercase">Ecuador Gol Financiero</span>
+    </div>
+
+    <!-- Permanent Restart Button -->
+    <button class="pixel-btn bg-yellow-400 hover:bg-yellow-300 text-green-950 px-4 py-2.5 flex items-center gap-2 text-[9px] md:text-[10px] pointer-events-auto cursor-pointer" onclick="resetGameDirectly()">
+      <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+      <span>Reiniciar Partido</span>
+    </button>
+  </div>
+
+  <!-- Game Field -->
+  <div class="field" id="field" onclick="handleFieldClick()">
+   <!-- Decorado SNES: cielo, sol, nubes, colinas y arbustos -->
+   <div class="sky-band"></div>
+   <div class="pixel-sun"></div>
+   <div class="pixel-cloud" style="top: 26px; left: 12%;"></div>
+   <div class="pixel-cloud" style="top: 40px; left: 42%; animation-delay: -14s;"></div>
+   <div class="pixel-cloud" style="top: 22px; left: 68%; animation-delay: -28s;"></div>
+   <div class="pixel-hill" style="left: 6%;"></div>
+   <div class="pixel-hill" style="left: 58%;"></div>
+   <div class="pixel-bush" style="left: 32%;"></div>
+   <div class="pixel-bush" style="left: 82%;"></div>
+
+   <div class="center-line"></div>
+   <div class="center-circle"></div>
+   <div class="goal-area"></div>
+   <div class="goal-area goal-area-right"></div>
+
+   <!-- Progress Tracker (Pips) -->
+   <div class="progress-bar" id="progress-bar"></div>
+
+   <!-- Position dots rendered by JS -->
+   <div id="dots-container"></div>
+
+   <!-- Player Character with Yellow Jersey and Blue Shorts (La Tri) with animation-ready groups -->
+   <div class="player" id="player">
+    <div class="player-body">
+      <svg viewBox="0 0 64 80" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+        <!-- Shadow -->
+        <ellipse cx="32" cy="74" rx="16" ry="5" fill="rgba(0,0,0,0.3)" />
+
+        <!-- LEFT LEG (Animate group from hip) -->
+        <g class="left-leg" style="transform-origin: 25px 52px;">
+          <rect x="22" y="52" width="6" height="14" fill="#8d6e63" rx="1" />
+          <rect x="22" y="58" width="6" height="6" fill="#d32f2f" /> <!-- Red sock top -->
+          <rect x="20" y="66" width="9" height="5" fill="#111" rx="2" /> <!-- Boot -->
+        </g>
+
+        <!-- RIGHT LEG (Animate group from hip) -->
+        <g class="right-leg" style="transform-origin: 39px 52px;">
+          <rect x="36" y="52" width="6" height="14" fill="#8d6e63" rx="1" />
+          <rect x="36" y="58" width="6" height="6" fill="#d32f2f" /> <!-- Red sock top -->
+          <rect x="35" y="66" width="9" height="5" fill="#111" rx="2" /> <!-- Boot -->
+        </g>
+
+        <!-- UPPER BODY WRAPPER FOR RUNNING TILT -->
+        <g class="player-upper-body" style="transform-origin: 32px 50px;">
+          <!-- Pantaloneta (Blue Shorts) -->
+          <path d="M 18 42 L 46 42 L 44 54 L 33 54 L 32 48 L 31 54 L 20 54 Z" fill="#0d47a1" />
+
+          <!-- Camiseta (Yellow Jersey) -->
+          <path d="M 16 22 L 48 22 L 46 44 L 18 44 Z" fill="#fdd835" />
+
+          <!-- Sleeves (Yellow with Blue outlines) -->
+          <path d="M 16 22 L 10 32 L 14 34 L 18 26 Z" fill="#fdd835" />
+          <path d="M 14 31 L 11 32 L 13 34 L 16 33 Z" fill="#0d47a1" />
+
+          <path d="M 48 22 L 54 32 L 50 34 L 46 26 Z" fill="#fdd835" />
+          <path d="M 50 31 L 53 32 L 51 34 L 48 33 Z" fill="#0d47a1" />
+
+          <!-- Red & Blue Collar Accent (Ecuador Flag vibe) -->
+          <path d="M 26 22 L 38 22 L 32 28 Z" fill="#0d47a1" />
+          <path d="M 28 22 L 36 22 L 32 25 Z" fill="#d32f2f" />
+
+          <!-- Arms (Skin) -->
+          <rect x="9" y="32" width="5" height="12" fill="#8d6e63" rx="1" />
+          <rect x="50" y="32" width="5" height="12" fill="#8d6e63" rx="1" />
+
+          <!-- Head -->
+          <circle cx="32" cy="14" r="9" fill="#8d6e63" />
+          <!-- Ears -->
+          <circle cx="22" cy="14" r="2.5" fill="#8d6e63" />
+          <circle cx="42" cy="14" r="2.5" fill="#8d6e63" />
+
+          <!-- Black Athletic Hair -->
+          <path d="M 21 14 C 21 6, 43 6, 43 14 C 40 10, 24 10, 21 14" fill="#1a1a1a" />
+          <path d="M 23 11 C 26 5, 38 5, 41 11 C 37 8, 27 8, 23 11 Z" fill="#1a1a1a" />
+
+          <!-- Face Details -->
+          <circle cx="29" cy="14" r="1" fill="#1a1a1a" />
+          <circle cx="35" cy="14" r="1" fill="#1a1a1a" />
+          <path d="M 30 17 Q 32 19 34 17" stroke="#1a1a1a" stroke-width="1.5" fill="none" />
+
+          <!-- Number 10 on Jersey -->
+          <text x="32" y="37" font-family="'DM Sans', sans-serif" font-weight="900" font-size="12" fill="#0d47a1" text-anchor="middle">10</text>
+        </g>
+
+        <!-- Soccer Ball rotating with running -->
+        <g class="soccer-ball" style="transform-origin: 16px 68px;">
+          <circle cx="16" cy="68" r="7" fill="#ffffff" stroke="#111" stroke-width="1" />
+          <path d="M 16 61 L 16 75 M 9 68 L 23 68" stroke="#111" stroke-width="0.5" />
+          <polygon points="16,64 18,66 17,70 15,70 14,66" fill="#111" />
+          <polygon points="11,63 13,64 12,67 10,65" fill="#111" />
+          <polygon points="21,63 19,64 20,67 22,65" fill="#111" />
+        </g>
+      </svg>
+    </div>
+   </div>
+  </div>
+
+  <!-- Capa CRT sobre todo el juego -->
+  <div class="crt-overlay"></div>
+
+  <!-- Question Modal -->
+  <div id="question-modal" class="modal-overlay hidden">
+   <div class="modal-card">
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-2">
+        <span class="text-2xl">📋</span>
+        <span id="q-number" class="pixel-font text-[9px] text-green-800 uppercase tracking-wider"></span>
+      </div>
+      <span class="pixel-font bg-yellow-300 text-yellow-900 text-[8px] px-2.5 py-1.5" style="border: 2px solid #0c1424;">La Tri Decide</span>
+    </div>
+    <p id="q-text" class="font-bold text-gray-900 text-lg mb-5 leading-snug"></p>
+    <div class="space-y-3">
+      <button class="option-btn" id="opt-a" onclick="answer(0)"></button>
+      <button class="option-btn" id="opt-b" onclick="answer(1)"></button>
+    </div>
+    <p id="feedback" class="mt-4 text-sm font-bold text-center py-2.5 hidden" style="border: 3px solid currentColor;"></p>
+   </div>
+  </div>
+
+  <script>
+        const questions = [
+            { q: "El presupuesto es tu DT: ¿cómo planificas tu estrategia antes de que inicie el torneo?", a: "Defino un presupuesto de gastos. Un buen equipo entra a la cancha con un plan.", b: "Gasto según el momento y la emoción, luego veré cómo cubro la tarjeta.", correct: 0 },
+            { q: "Evita la tarjeta roja con las TV: si deseas comprar una pantalla nueva a crédito...", a: "La compro únicamente si la cuota mensual se ajusta cómodamente a mi presupuesto, para disfrutar sin preocupaciones.", b: "Consigo la más grande y moderna a 36 meses sin importar la cuota.", correct: 0 },
+            { q: "Parrillada en equipo: para disfrutar del partido de Ecuador con tus amigos...", a: "Divido los gastos de la comida y bebida para que sea más ligero y divertido para todos.", b: "Financio e invito todo yo solo para impresionar a la barra del barrio.", correct: 0 },
+            { q: "Frena el gasto hormiga: esos snacks, cervezas rápidas o entregas exprés diarias...", a: "Registro mis gastos diarios para identificar esos pequeños consumos que, sin darme cuenta, suman más de lo que imagino.", b: "No los controlo, las monedas sueltas no afectan mi presupuesto mundialista.", correct: 0 },
+            { q: "Camisetas con estrategia: ¿cómo luces los colores de la Selección?", a: "Aprovecho las camisetas que ya tengo y si compro una nueva busco promociones.", b: "Compro la de estreno al precio que sea el día de la inauguración.", correct: 0 },
+            { q: "Apuestas no son inversión: ante la fiebre de los pronósticos deportivos virtuales...", a: "Distingo entre entretenimiento e inversión, y destino solo un monto que no afecte mis finanzas.", b: "Invierto dinero de los servicios básicos confiando en que mi conocimiento me hará ganar.", correct: 0 },
+            { q: "Bebidas en «preventa»: al abastecerte para los partidos de la Tri...", a: "Planifico mis compras con anticipación para aprovechar mejores precios.", b: "Compro individualmente a última hora pagando sobreprecios de tienda.", correct: 0 },
+            { q: "Tiempo extra en la planilla de luz: si verás los 64 encuentros en alta definición...", a: "Optimizo el uso de mis equipos electrónicos durante los partidos y cuido mi consumo de energía.", b: "Dejo todo conectado de todas formas, el consumo eléctrico no aumentará tanto.", correct: 0 },
+            { q: "Ciberseguridad en el área chica: al sintonizar las transmisiones en vivo...", a: "Utilizo plataformas y sitios confiables para seguir los partidos y proteger mi información personal y financiera.", b: "Hago clic en enlaces sospechosos de streaming alternativo gratuito.", correct: 0 },
+            { q: "El ahorro es tu arquero: ante las urgencias financieras posteriores a la copa...", a: "Mantengo mi fondo de emergencia para estar preparado ante cualquier imprevisto, dentro y fuera de la cancha.", b: "Vacío mis ahorros de seguridad, se vive una sola vez y hay que gozar el Mundial.", correct: 0 }
+        ];
+
+        // Positions on field (percentage based, left to right in a natural tactical weave)
+        const positions = [];
+        for (let i = 0; i <= 10; i++) {
+            // Tactical trajectory (running up field in a wave)
+            positions.push({ x: 8 + i * 8, y: 35 + Math.sin(i * 1.1) * 22 });
+        }
+        // Final Goal / Score target position inside goal-area-right
+        positions.push({ x: 94, y: 50 });
+
+        let currentPos = 0;
+        let gameActive = false;
+        let answering = false;
+
+        // Initialize icons
+        lucide.createIcons();
+
+        function renderDots() {
+            const container = document.getElementById('dots-container');
+            container.innerHTML = '';
+            for (let i = 1; i <= 10; i++) {
+                const dot = document.createElement('div');
+                dot.className = 'position-dot';
+                dot.id = 'dot-' + i;
+                dot.style.left = positions[i].x + '%';
+                dot.style.top = positions[i].y + '%';
+                dot.textContent = '?';
+                // Tooltip info on hover for context
+                dot.title = `Decisión ${i}`;
+                container.appendChild(dot);
+            }
+        }
+
+        function renderProgress() {
+            const bar = document.getElementById('progress-bar');
+            bar.innerHTML = '';
+            for (let i = 0; i < 10; i++) {
+                const pip = document.createElement('div');
+                pip.className = 'progress-pip' + (i < currentPos ? ' done' : '');
+                pip.textContent = i + 1;
+                bar.appendChild(pip);
+            }
+        }
+
+        function movePlayer(pos) {
+            const playerElement = document.getElementById('player');
+
+            // Add running animation class representing leg alternation
+            playerElement.classList.add('is-running');
+
+            // Apply coordinates offset so base of player body lines up beautifully on dot
+            playerElement.style.left = `calc(${positions[pos].x}% - 29px)`;
+            playerElement.style.top = `calc(${positions[pos].y}% - 60px)`;
+
+            // Turn off running animation when transition finishes (0.8s matching transition)
+            setTimeout(() => {
+                playerElement.classList.remove('is-running');
+            }, 800);
+        }
+
+        function startGame() {
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('victory-screen').classList.add('hidden');
+            currentPos = 0;
+            gameActive = true;
+            answering = false;
+            renderDots();
+            renderProgress();
+            movePlayer(0);
+
+            // Reset dots
+            for (let i = 1; i <= 10; i++) {
+                const d = document.getElementById('dot-' + i);
+                if (d) d.classList.remove('cleared');
+            }
+        }
+
+        function resetGameDirectly() {
+            // Direct immediate reset trigger
+            startGame();
+        }
+
+        function handleFieldClick() {
+            if (!gameActive || answering) return;
+            if (currentPos >= 10) return;
+            showQuestion(currentPos);
+        }
+
+        function showQuestion(idx) {
+            answering = true;
+            const q = questions[idx];
+            document.getElementById('q-number').textContent = `Decisión Táctica ${idx + 1} de 10`;
+            document.getElementById('q-text').textContent = q.q;
+            document.getElementById('opt-a').textContent = q.a;
+            document.getElementById('opt-b').textContent = q.b;
+
+            // Reset modal classes
+            document.getElementById('opt-a').className = 'option-btn';
+            document.getElementById('opt-b').className = 'option-btn';
+            document.getElementById('opt-a').disabled = false;
+            document.getElementById('opt-b').disabled = false;
+
+            document.getElementById('feedback').classList.add('hidden');
+            document.getElementById('question-modal').classList.remove('hidden');
+        }
+
+        function answer(choice) {
+            const q = questions[currentPos];
+            const optA = document.getElementById('opt-a');
+            const optB = document.getElementById('opt-b');
+            const fb = document.getElementById('feedback');
+
+            optA.disabled = true;
+            optB.disabled = true;
+
+            if (choice === q.correct) {
+                (choice === 0 ? optA : optB).classList.add('correct');
+                fb.textContent = '⚽ ¡Excelente jugada! Corres a la siguiente base.';
+                fb.className = 'mt-4 text-sm font-bold text-center py-2.5 bg-green-100 text-green-800';
+                fb.style.border = '3px solid #2e7d32';
+                currentPos++;
+
+                // Color the cleared point
+                const dot = document.getElementById('dot-' + currentPos);
+                if (dot) dot.classList.add('cleared');
+            } else {
+                (choice === 0 ? optA : optB).classList.add('wrong');
+                (q.correct === 0 ? optA : optB).classList.add('correct');
+                fb.textContent = '⚠️ ¡Falta! Decisión de riesgo. Retrocedes un paso.';
+                fb.className = 'mt-4 text-sm font-bold text-center py-2.5 bg-red-100 text-red-800';
+                fb.style.border = '3px solid #c62828';
+
+                // Backtrack dot
+                const prevDot = document.getElementById('dot-' + (currentPos));
+                if (prevDot) prevDot.classList.remove('cleared');
+
+                if (currentPos > 0) currentPos--;
+            }
+
+            fb.classList.remove('hidden');
+            renderProgress();
+
+            setTimeout(() => {
+                document.getElementById('question-modal').classList.add('hidden');
+                movePlayer(currentPos);
+                answering = false;
+
+                // Check final victory milestone
+                if (currentPos >= 10) {
+                    setTimeout(() => {
+                        movePlayer(11); // Run straight into the goal net
+                        setTimeout(() => {
+                            document.getElementById('victory-screen').classList.remove('hidden');
+                            gameActive = false;
+                        }, 900);
+                    }, 400);
+                }
+            }, 1800);
+        }
+  </script>
+</body>
+</html>
